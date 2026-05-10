@@ -14,8 +14,9 @@ REP_SIGNAL = {
     "dlift": ("hip_angle",    "peak"),    # hip angle peaks at top of deadlift
 }
 
-SMOOTH_WINDOW = 15   # frames to average for smoothing (~0.5s at 30fps)
-MIN_REP_FRAMES = 20  # minimum frames a rep must span to be counted (~0.7s)
+SMOOTH_WINDOW  = 15  # frames to average for smoothing (~0.5s at 30fps)
+MIN_REP_FRAMES = 45  # minimum frames between turning points (~1.5s at 30fps)
+PROMINENCE     = 20  # minimum angle change a peak/valley must stand out by (degrees)
 
 # Rolling average to reduce between frame noise
 def smooth(signal: np.ndarray) -> np.ndarray:
@@ -25,9 +26,9 @@ def smooth(signal: np.ndarray) -> np.ndarray:
 def find_rep_boundaries(signal: np.ndarray, mode: str) -> np.ndarray:
     # return indices of rep turning points (valleys or peaks)
     if mode == "valley":
-        indices, _ = find_peaks(-signal, distance=MIN_REP_FRAMES)
+        indices, _ = find_peaks(-signal, distance=MIN_REP_FRAMES, prominence=PROMINENCE)
     else:
-        indices, _ = find_peaks(signal, distance=MIN_REP_FRAMES)
+        indices, _ = find_peaks(signal, distance=MIN_REP_FRAMES, prominence=PROMINENCE)
     return indices
 
 
