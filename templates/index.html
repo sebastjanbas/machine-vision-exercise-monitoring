@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exercise Form Classifier</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header>
+    <h1>Exercise Form Classifier</h1>
+    <div style="text-align:right">
+      <button id="net-toggle" onclick="toggleNetwork()">🌐 Show Network URL</button>
+      <div id="net-url">
+        Access from another device: <a href="http://{{ network_ip }}:5000" target="_blank">http://{{ network_ip }}:5000</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="exercise-buttons">
+    <button class="ex-btn" id="btn-squat"  onclick="setExercise('squat')">Squat</button>
+    <button class="ex-btn" id="btn-ohp"    onclick="setExercise('ohp')">OHP</button>
+    <button class="ex-btn" id="btn-dlift"  onclick="setExercise('dlift')">Deadlift</button>
+  </div>
+
+  <div id="video-container">
+    <img id="video-feed" src="/video_feed" alt="Webcam feed">
+    <div id="rec-indicator"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-label">Reps</div>
+      <div id="rep-count">0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Last Rep</div>
+      <div id="form-result" class="none">—</div>
+    </div>
+  </div>
+
+  <button id="reset-btn" onclick="resetReps()">Reset Counter</button>
+  <div id="no-exercise-hint">Select an exercise to begin</div>
+
+  <script>
+    let activeExercise = null;
+
+    function setExercise(ex) {
+      activeExercise = ex;
+
+      // Update button styles
+      ['squat','ohp','dlift'].forEach(e => {
+        document.getElementById('btn-' + e).classList.toggle('active', e === ex);
+      });
+
+      // Update hint
+      document.getElementById('no-exercise-hint').style.display = 'none';
+
+      fetch('/set_exercise', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({exercise: ex})
+      });
+
+      // Reset display
+      document.getElementById('rep-count').textContent = '0';
+      setFormResult(null);
+    }
+
+    function resetReps() {
+      fetch('/reset', {method: 'POST'});
+      document.getElementById('rep-count').textContent = '0';
+      setFormResult(null);
+    }
+
+    function toggleNetwork() {
+      const el  = document.getElementById('net-url');
+      const btn = document.getElementById('net-toggle');
+      const visible = el.style.display === 'block';
+      el.style.display  = visible ? 'none' : 'block';
+      btn.textContent   = visible ? '🌐 Show Network URL' : '🌐 Hide Network URL';
+    }
+
+    function setFormResult(result) {
+      const el = document.getElementById('form-result');
+      el.className = 'form-result';
+      if (result === 'good') {
+        el.textContent = 'GOOD FORM ✓';
+        el.className = 'good';
+      } else if (result === 'bad') {
+        el.textContent = 'BAD FORM ✗';
+        el.className = 'bad';
+      } else {
+        el.textContent = '—';
+        el.className = 'none';
+      }
+    }
+
+    // Poll status every 400ms
+    setInterval(() => {
+      fetch('/status')
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById('rep-count').textContent = data.reps;
+          setFormResult(data.result);
+          document.getElementById('rec-indicator').style.display = data.in_rep ? 'block' : 'none';
+        })
+        .catch(() => {});
+    }, 400);
+  </script>
+
+</body>
+</html>
