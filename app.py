@@ -4,7 +4,6 @@ import numpy as np
 import joblib
 import time
 import threading
-import socket
 from pathlib import Path
 from flask import Flask, Response, render_template, jsonify, request
 import sounddevice as sd
@@ -23,6 +22,7 @@ class State:
         self.last_result = None
         self.in_rep      = False
         self.frame_jpg   = None
+        self.angles      = {}
 
 state = State()
 
@@ -74,23 +74,19 @@ PoseLandmarkerOptions = mp.tasks.vision.PoseLandmarkerOptions
 RunningMode           = mp.tasks.vision.RunningMode
 
 
-# When I want to have a phone as a camera
-def get_local_ip() -> str:
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
-
-
 def play_ping(freq=1050, duration=0.18, volume=0.6, sample_rate=44100):
     t        = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
     envelope = np.exp(-t * 18)
     wave     = (np.sin(2 * np.pi * freq * t) * envelope * volume).astype(np.float32)
     sd.play(wave, samplerate=sample_rate)
+
+
+def play_buzz(freq=300, duration=0.15, volume=0.55, sample_rate=44100):
+    t        = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    envelope = np.exp(-t * 10)
+    beep     = (np.sin(2 * np.pi * freq * t) * envelope * volume).astype(np.float32)
+    silence  = np.zeros(int(sample_rate * 0.07), dtype=np.float32)
+    sd.play(np.concatenate([beep, silence, beep]), samplerate=sample_rate)
 
 
 def angle_between(a, b, c):
@@ -155,31 +151,15 @@ def extract_features(rep_buffer, exercise):
     return {feat: col_map.get(feat) for feat in FEATURES[exercise]}
 
 
-def annotate_frame(frame, joints, angles, last_result, in_rep):
-    h, w = frame.shape[:2]
-
+def annotate_frame(frame, joints, in_rep):
     for a, b in CONNECTIONS:
         if a in joints and b in joints:
             color = (0, 220, 0) if "right" in a else (180, 180, 180)
             cv2.line(frame, joints[a], joints[b], color, 2, cv2.LINE_AA)
     for px in joints.values():
         cv2.circle(frame, px, 5, (255, 255, 255), -1, cv2.LINE_AA)
-
-    y = 30
-    for label, val in angles.items():
-        if val is not None:
-            cv2.putText(frame, f"{label}: {val:.1f}", (10, y),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 220, 255), 1, cv2.LINE_AA)
-            y += 22
-
-    if last_result:
-        text  = "GOOD FORM" if last_result == "good" else "BAD FORM"
-        color = (0, 200, 0) if last_result == "good" else (0, 0, 220)
-        tw    = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, 1.2, 2)[0][0]
-        cv2.putText(frame, text, ((w - tw) // 2, 55),
-                    cv2.FONT_HERSHEY_DUPLEX, 1.2, color, 2, cv2.LINE_AA)
-
     if in_rep:
+        w = frame.shape[1]
         cv2.circle(frame, (w - 20, 20), 8, (0, 100, 255), -1, cv2.LINE_AA)
 
 
@@ -193,7 +173,7 @@ def webcam_loop(classifiers: dict) -> None:
         min_tracking_confidence=0.5,
     )
 
-    cap        = cv2.VideoCapture(1)
+    cap        = cv2.VideoCapture(0)
     start_time = time.time()
     in_rep     = False
     rep_buffer = []
@@ -248,29 +228,32 @@ def webcam_loop(classifiers: dict) -> None:
                                     prediction = classifiers[exercise].predict(row)[0]
                                     with state.lock:
                                         state.last_result = prediction
-                                        state.rep_count  += 1
+                                        if prediction == "good":
+                                            state.rep_count += 1
                                     last_result = prediction
                                     if prediction == "good":
                                         play_ping()
+                                    else:
+                                        play_buzz()
                             in_rep, rep_buffer = False, []
 
-            annotate_frame(frame, joints, angles, last_result, in_rep)
+            annotate_frame(frame, joints, in_rep)
 
             _, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             with state.lock:
                 state.frame_jpg = jpg.tobytes()
                 state.in_rep    = in_rep
+                state.angles    = angles
 
     cap.release()
 
 
 app = Flask(__name__)
-LOCAL_IP = get_local_ip()
 
 
 @app.route("/")
 def index():
-    return render_template("index.html", network_ip=LOCAL_IP)
+    return render_template("index.html")
 
 
 @app.route("/video_feed")
@@ -312,6 +295,7 @@ def status():
             reps=state.rep_count,
             result=state.last_result,
             in_rep=state.in_rep,
+            angles=state.angles,
         )
 
 
@@ -328,8 +312,7 @@ if __name__ == "__main__":
     t = threading.Thread(target=webcam_loop, args=(classifiers,), daemon=True)
     t.start()
 
-    print(f"\n  Local:   http://localhost:5000")
-    print(f"  Network: http://{LOCAL_IP}:5000\n")
+    print(f"\n  http://localhost:5000\n")
 
     # 0.0.0.0 makes it accessible on both localhost and network
     app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)

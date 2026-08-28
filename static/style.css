@@ -22,28 +22,6 @@ header {
 
 h1 { font-size: 1.4rem; color: #a0c4ff; letter-spacing: 0.5px; }
 
-/* Network toggle */
-#net-toggle {
-  background: #1e1e35;
-  border: 1px solid #3a3a5c;
-  color: #a0c4ff;
-  padding: 6px 14px;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  transition: background 0.2s;
-}
-#net-toggle:hover { background: #2a2a50; }
-
-#net-url {
-  display: none;
-  margin-top: 8px;
-  font-size: 0.85rem;
-  color: #7ec8e3;
-  text-align: right;
-}
-#net-url a { color: #7ec8e3; }
-
 /* Exercise buttons */
 .exercise-buttons {
   display: flex;
@@ -65,18 +43,57 @@ h1 { font-size: 1.4rem; color: #a0c4ff; letter-spacing: 0.5px; }
 .ex-btn:hover  { border-color: #a0c4ff; color: #a0c4ff; }
 .ex-btn.active { border-color: #00b4d8; background: #003d50; color: #00e5ff; }
 
+/* Video row */
+.video-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* Angle panel */
+#angle-panel {
+  width: 160px;
+  flex-shrink: 0;
+  background: #1a1a2e;
+  border: 1px solid #2a2a4a;
+  border-radius: 12px;
+  padding: 16px 14px;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.angle-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.angle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.85rem;
+}
+
+.angle-row span:first-child { color: #888; }
+.angle-row span:last-child  { color: #00e5ff; font-variant-numeric: tabular-nums; }
+
 /* Video */
 #video-container {
   position: relative;
   border-radius: 12px;
   overflow: hidden;
   border: 2px solid #2a2a4a;
-  margin-bottom: 24px;
 }
 
 #video-feed {
   display: block;
-  width: 640px;
+  width: 1200px;
   max-width: 100%;
 }
 
