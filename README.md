@@ -1,138 +1,74 @@
 # Exercise Form Classifier
 
-Real-time exercise form feedback using your webcam. Point a camera at yourself, select an exercise, and the app tells you after each rep whether your form was **good** or **bad** — with a sound cue and a rep counter that only increments for clean reps.
+**Real-time feedback on barbell form from a webcam: after every rep, the app tells you whether it was good or bad.**
 
-Supports three exercises: **squat**, **overhead press (OHP)**, and **deadlift**.
+Machine Vision course project (CS 4885), University of Idaho, 2026 · Solo
 
----
-
-## Demo
-
+<!-- TODO: add a short GIF of a squat with the good/bad result appearing -->
 
 ---
 
-## How It Works
+Point a camera at yourself, pick an exercise (**squat**, **overhead press**, or **deadlift**), and lift. After each rep you hear a high ping for good form or a double buzz for bad form, and the rep counter only counts clean reps.
 
-```
-Webcam → MediaPipe Pose → Joint Angles → Rep Segmentation → Random Forest → GOOD / BAD
-```
-
-Each rep is captured as a time-series of joint angles. When the rep completes, five summary statistics (min, max, mean, std, range) are extracted per angle and fed into a trained Random Forest classifier. The result is displayed on the web UI and played back as audio.
-
-### Training Pipeline
-
-The classifiers were trained on 18 videos (3 good + 3 bad per exercise, ~20 reps each):
-
-| Script | Input → Output |
+| Exercise | What "bad form" means |
 |---|---|
-| `scripts/extract_poses.py` | Raw videos → landmark CSVs (MediaPipe BlazePose) |
-| `scripts/calculate_angles.py` | Landmarks → joint angle CSVs |
-| `scripts/get_reps.py` | Angle time-series → individual rep CSVs |
-| `scripts/build_dataset.py` | Per-rep CSVs → `data/dataset.csv` (339 rows) |
-| `scripts/train.py` | Dataset → `models/*.joblib` (Random Forest per exercise) |
+| Squat | Not reaching 90° of knee flexion (a shallow squat) |
+| Overhead press | No lockout at the top, the elbow never fully extends |
+| Deadlift | Rounded lower back, with increased trunk lean through the lift |
 
-### What "Bad Form" Means
+## How it works
 
-| Exercise | Bad Form Definition |
-|---|---|
-| Squat | Not reaching 90° knee flexion (shallow squat) |
-| OHP | No lockout at the top — elbow doesn't fully extend |
-| Deadlift | Rounded lower back — increased trunk lean throughout lift |
+```
+Webcam → MediaPipe Pose → joint angles → rep segmentation → Random Forest → GOOD / BAD
+```
 
-### Classifier Accuracy (Leave-One-Video-Out CV)
+Each rep is recorded as a time series of joint angles. When the rep ends, five statistics per angle (min, max, mean, standard deviation, range) go into a Random Forest trained for that exercise. Reps are found with peak detection on the angle signal.
 
-| Exercise | Accuracy |
-|---|---|
-| Squat | 100% (121/121) |
-| OHP | 99% (104/105) |
-| Deadlift | 100% (113/113) |
-
-The single OHP miss is a bad-form rep classified as good — expected given the subtlety of the fault (~10° difference in elbow extension).
+The dataset is my own: 18 videos (3 good and 3 bad per exercise), segmented into **339 labelled reps**.
 
 ---
 
-## Web UI
+## The most important thing I got wrong, and fixed
 
-```
-┌─────────────────────────────────────────────┐
-│           Exercise Form Classifier           │
-├─────────────────────────────────────────────┤
-│        [Squat]   [OHP]   [Deadlift]         │
-├──────────────┬──────────────────────────────┤
-│ Angles       │                              │
-│ Knee   —     │       Live webcam feed       │
-│ Hip    —     │                              │
-│ Elbow  —     │   ● in-rep indicator         │
-│ Shoulder —   │                              │
-│ Trunk lean — │                              │
-├──────────────┴──────────────────────────────┘
-│     Reps: 0          Last Rep: —            │
-│              [Reset Counter]                │
-└─────────────────────────────────────────────┘
-```
+My first evaluation split the 339 reps **randomly** into training and test sets. The accuracy looked excellent, and that was the problem.
 
-- Live joint angles update at 400 ms intervals
-- Rep counter only increments for good-form reps
-- Audio feedback: high ping = good form, double buzz = bad form
-- Orange dot in the top-right corner of the video feed while a rep is in progress
+Reps from the same video are nearly identical: same lighting, same camera angle, same bar, same session. With a random split, almost every test rep had a near-duplicate "sibling" in the training set, so the model was being tested on data it had effectively already seen. That is **data leakage**, and it inflates accuracy.
+
+**The fix:** **leave-one-video-out cross-validation.** Every video is held out in turn, so the model is always tested on a recording it has never seen any part of.
+
+| Exercise | Accuracy (leave-one-video-out) |
+|---|---|
+| Squat | 100% (121 / 121) |
+| Overhead press | 99% (104 / 105) |
+| Deadlift | 100% (113 / 113) |
+
+The single miss is a bad overhead press classified as good, which makes sense: that fault is only about a 10° difference in elbow extension.
+
+### What these numbers do *not* show
+
+Every video is of **one person: me.** Leave-one-video-out proves the model generalizes to new recordings of me, not to other people with different body proportions. Testing that would need a multi-person dataset evaluated with **leave-one-subject-out** cross-validation, which is the next step.
 
 ---
 
-## Quick Start
+## Other limitations
 
-### Requirements
+- **Side view only:** the lifter's right side must face the camera.
+- **Rep-detection thresholds** are tuned to my movement and may need adjusting for others.
+- **No authentication:** the Flask app is reachable by any device on the local network.
 
-- Python 3.10+
-- A webcam
-- [`pose_landmarker_full.task`](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) placed in the project root
+**Stack:** Python · MediaPipe · scikit-learn · OpenCV · SciPy · Flask
 
-### Install
+<details>
+<summary>Running locally</summary>
+
+Requires Python 3.10+, a webcam, and [`pose_landmarker_full.task`](https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker) in the project root.
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-pip install sounddevice  # not in requirements.txt but required for audio
+python app.py   # open http://localhost:5000
 ```
 
-### Run (models are already trained)
+To retrain from the original videos, run the scripts in `scripts/` in order: `extract_poses` → `calculate_angles` → `get_reps` → `build_dataset` → `train`.
 
-```bash
-python app.py
-```
-
-Open `http://localhost:5000`, select an exercise, and stand so your **right side faces the camera**.
-
-### Retrain from Scratch
-
-Run the pipeline scripts in order (requires the original `.MOV` video files):
-
-```bash
-python scripts/extract_poses.py
-python scripts/calculate_angles.py
-python scripts/get_reps.py
-python scripts/build_dataset.py
-python scripts/train.py
-```
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| Pose estimation | MediaPipe Pose Landmarker (BlazePose) |
-| Classifier | Random Forest (scikit-learn) |
-| Web server | Flask |
-| Video capture | OpenCV |
-| Audio feedback | sounddevice + numpy (synthesized sine waves) |
-| Rep segmentation | scipy `find_peaks` |
-
----
-
-## Limitations
-
-- **Single subject** — trained on one person. May need retraining for other individuals.
-- **Right-side only** — the subject must face left (right side toward the camera).
-- **Fixed thresholds** — rep detection uses angle thresholds tuned for the training subject; may need adjustment for different body proportions.
-- **No authentication** — the Flask app is accessible to any device on the local network.
+</details>
